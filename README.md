@@ -18,3 +18,13 @@ $ make flash ESPPORT=<serial-port-for-the-esp8266>
 $ make flash -j4 ESPPORT=<serial-port-for-the-esp8266> RTOS_ROOTDIR=<path-to-esp-open-rtos-dir>
 
 ```
+
+# ** NOTE **
+Please checkout the "indoor-farming" branch of https://github.com/mykhani/esp-open-rtos
+git repo as it contains the commit for selecting the UART for printing debug info.
+You can checkout the code using below commands.
+```
+$ git clone https://github.com/mykhani/esp-open-rtos.git
+$ cd esp-open-rtos
+$ git checkout indoor-farming
+```
