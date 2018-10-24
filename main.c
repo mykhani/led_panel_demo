@@ -37,9 +37,9 @@
 #define FAR_RED_CHANNEL   2
 #define WHITE_CHANNEL     3
 
-#define RED_CHANNEL       1 /* Note: for chamber1, due to physical connection mistake, red and
+#define RED_CHANNEL       0 /* Note: for chamber1, due to physical connection mistake, red and
                              * blue channels have been interchanged. Actually, Red is ch0 and blue is ch1 */
-#define BLUE_CHANNEL      0
+#define BLUE_CHANNEL      1
 
 #define PWM_LED_POWER_ON    4095
 #define PWM_LED_POWER_OFF   0
@@ -75,10 +75,10 @@ PBCamera camera;
 /* You can use http://test.mosquitto.org/ to test mqtt_client instead
  * of setting up your own MQTT server */
 
-#define MQTT_HOST ("chamber1.local")
-#define MQTT_PORT 5555
+#define MQTT_HOST ("192.168.1.105")
+#define MQTT_PORT 1883
 
-#define MQTT_USER NULL
+#define MQTT_USER "W6C4rxoicfM1bwAUhbul"
 #define MQTT_PASS NULL
 
 #define MQTT_CLIENT_THREAD_NAME         "mqtt_client_thread"
@@ -95,6 +95,7 @@ PBCamera camera;
 /* wrapper for passing json message to publish queue */
 typedef struct QueueMessage_t {
     size_t len;
+    char *topic;
     uint8_t *data;
 } QueueMessage;
 
@@ -328,8 +329,49 @@ static void led_set_brightness(LedController *controller, uint8_t color, uint16_
 static void handleLightCommand(mqtt_message_data_t* data)
 {
     char *message = data->message->payload;
+   
+
+//for( i = 0; i < md->topic->lenstring.len; ++i)
+  //      printf("%c", md->topic->lenstring.data[ i ]);
+
+
+    //int topic_len = data->topic->lenstring.len;
+
+    int topic_len = data->topic->lenstring.len;
+
+    xSemaphoreTake(publish_image, portMAX_DELAY);
+    printf("THINGSBOARD: Topic len: %d\r\n", topic_len);
+
+    char *topic_request = (char *)zalloc(topic_len * sizeof(char));
+
+    int i;
+
+    for(i = 0; i < topic_len; ++i) {
+        topic_request[i] = data->topic->lenstring.data[i];
+        printf("%c", data->topic->lenstring.data[ i ]);
+    }
+
+    topic_request[i] = '\0';
     
-    printf("Light cmd arrived.\r\n");
+    printf("THINGSBOARD: Topic request: %s\r\n", topic_request);
+
+    char *request_id = NULL;
+    
+    request_id = strtok(topic_request, "/");
+    printf("Req: %s\r\n", request_id);
+    request_id = strtok(NULL, "/");
+    printf("Req: %s\r\n", request_id);
+    request_id = strtok(NULL, "/");
+    printf("Req: %s\r\n", request_id);
+    request_id = strtok(NULL, "/");
+    printf("Req: %s\r\n", request_id);
+    request_id = strtok(NULL, "/");
+    printf("Req: %s\r\n", request_id);
+    request_id = strtok(NULL, "/");
+    printf("Req: %s\r\n", request_id);
+    
+    printf("Light cmd arrived\r\n");
+    printf("Payload: %s \r\n", message);
     //printf("Light cmd arrived: %s \r\n", message);
 
     cJSON *root = cJSON_Parse(message);
@@ -337,29 +379,99 @@ static void handleLightCommand(mqtt_message_data_t* data)
         printf("Error before: [%s]\n", cJSON_GetErrorPtr());
     }
 
-    const cJSON *red = NULL;
-    red = cJSON_GetObjectItemCaseSensitive(root, "red");
-    if (cJSON_IsNumber(red)) {
-        if (led_controller.red != red->valueint) {
-            led_set_brightness(&led_controller, RED_LED, red->valueint);
-        }
+    char *method = NULL;
+    const cJSON *_method = NULL;
+
+    _method = cJSON_GetObjectItemCaseSensitive(root, "method");
+    if (cJSON_IsString(_method)) {
+        method = _method->valuestring;
+    }
+    char * params = NULL;
+    const cJSON *_params = NULL;
+    _params = cJSON_GetObjectItemCaseSensitive(root, "params");
+    if (cJSON_IsString(_params)) {
+        params = _params->valuestring;
     }
 
-    const cJSON *blue = NULL;
-    blue = cJSON_GetObjectItemCaseSensitive(root, "blue");
-    if (cJSON_IsNumber(blue)) {
-        if (led_controller.blue != blue->valueint) {
-            led_set_brightness(&led_controller, BLUE_LED, blue->valueint);
+    char method_copy[100];
+    strcpy(method_copy, method);
+
+    printf("THINGSBOARD: method: %s, params: %s \r\n", method_copy, params);
+
+    QueueMessage *qmsg = (QueueMessage*) zalloc(sizeof(QueueMessage));
+    qmsg->topic = zalloc(topic_len * sizeof(char) + 1);
+    char *response_msg = zalloc(100 * sizeof(char));
+
+    qmsg->data = response_msg;
+    sprintf(qmsg->topic, "v1/devices/me/rpc/response/%s", request_id);
+
+    if (strcmp(method_copy, "getDesiredRed") == 0) {
+        printf("THINGSBOARD: Get desired red value request received \r\n");
+
+        sprintf(response_msg, "\"%d\"", led_controller.red);
+
+    } else if (strcmp(method_copy, "setDesiredRed") == 0) {
+        printf("THINGSBOARD: Set desired red value request received \r\n");
+
+        int red_val = (int) strtol(params, (char **)NULL, 10);
+
+        printf("THINGSBOARD: Value received: %d\r\n", red_val);
+        
+        if (led_controller.red != red_val) {
+            led_set_brightness(&led_controller, RED_LED, red_val);
         }
+
+        sprintf(response_msg, "\"%d\"", led_controller.red);
+    } else if (strcmp(method_copy, "getDesiredBlue") == 0) {
+        printf("THINGSBOARD: Get desired blue value request received \r\n");
+
+        sprintf(response_msg, "\"%d\"", led_controller.blue);
+
+    } else if (strcmp(method_copy, "setDesiredBlue") == 0) {
+        printf("THINGSBOARD: Set desired blue value request received \r\n");
+
+        int blue_val = (int) strtol(params, (char **)NULL, 10);
+
+        printf("THINGSBOARD: Value received: %d\r\n", blue_val);
+        
+        if (led_controller.blue != blue_val) {
+            led_set_brightness(&led_controller, BLUE_LED, blue_val);
+        }
+
+        sprintf(response_msg, "\"%d\"", led_controller.red);
+    } else if (strcmp(method_copy, "getDesiredFarRed") == 0) {
+        printf("THINGSBOARD: Get desired far red value request received \r\n");
+
+        sprintf(response_msg, "\"%d\"", led_controller.far_red);
+
+    } else if (strcmp(method_copy, "setDesiredFarRed") == 0) {
+        printf("THINGSBOARD: Set desired far red value request received \r\n");
+
+        int far_red_val = (int) strtol(params, (char **)NULL, 10);
+
+        printf("THINGSBOARD: Value received: %d\r\n", far_red_val);
+        
+        if (led_controller.far_red != far_red_val) {
+            led_set_brightness(&led_controller, FAR_RED_LED, far_red_val);
+        }
+
+        sprintf(response_msg, "\"%d\"", led_controller.far_red);
     }
 
-    const cJSON *far_red = NULL;
-    far_red = cJSON_GetObjectItemCaseSensitive(root, "far_red");
-    if (cJSON_IsNumber(far_red)) {
-        if (led_controller.far_red != far_red->valueint) {
-            led_set_brightness(&led_controller, FAR_RED_LED, far_red->valueint);
-        }
+    printf("THINGSBOARD: Resp topic: %s \r\n", qmsg->topic); 
+    printf("THINGSBOARD: Resp msg: %s \r\n", response_msg);
+    
+    qmsg->len = strlen(response_msg) + 1; // for string NULL delimiter
+    
+
+    if (xQueueSend(publish_queue, &qmsg, portMAX_DELAY) == pdFALSE) {
+        printf("Publish queue overflow.\r\n");
     }
+
+    //led_set_brightness(&led_controller, BLUE_LED, blue->valueint);
+
+    //led_set_brightness(&led_controller, FAR_RED_LED, far_red->valueint);
+    free(topic_request);
     cJSON_Delete(root);
 }
 
@@ -472,9 +584,9 @@ static void  mqtt_task(void *pvParameters)
             continue;
         }
         printf("done\r\n");
-        mqtt_subscribe(&client, "/chamber/device/camera/cmd", MQTT_QOS2, handleCameraCommand);
-        mqtt_subscribe(&client, "/chamber/device/camera/reset", MQTT_QOS2, handleCameraReset);
-        mqtt_subscribe(&client, "/chamber/device/light/cmd", MQTT_QOS2, handleLightCommand);
+        //mqtt_subscribe(&client, "/chamber/device/camera/cmd", MQTT_QOS2, handleCameraCommand);
+        //mqtt_subscribe(&client, "/chamber/device/camera/reset", MQTT_QOS2, handleCameraReset);
+        mqtt_subscribe(&client, "v1/devices/me/rpc/request/+", MQTT_QOS2, handleLightCommand);
         xQueueReset(publish_queue);
 
         while(1){
@@ -489,19 +601,33 @@ static void  mqtt_task(void *pvParameters)
                 message.payload = qmsg->data;
                 message.payloadlen = qmsg->len;
                 message.dup = 0;
-                message.qos = MQTT_QOS2;
+                message.qos = MQTT_QOS0;
                 message.retained = 0;
-                ret = mqtt_publish(&client, "/chamber/device/camera/image", &message);
+                
+                printf("Topic: %s \r\n", qmsg->topic);
+
+                printf("Message: %s, len: %d \r\n", qmsg->data, qmsg->len);
+                ret = mqtt_publish(&client, qmsg->topic, &message);
+
                 if (ret != MQTT_SUCCESS ){
                     printf("error while publishing message: %d\n", ret );
                     /* TODO: handle what to do when publishing fails.
                      * Maybe retransmit message? */
+                    free(qmsg->topic);
+                    free(qmsg->data);
+                    free(qmsg);
                     xSemaphoreGive(publish_image);
                     break;
                 } else {
                     printf("Published \r\n");
+                    free(qmsg->topic);
+                    free(qmsg->data);
+                    free(qmsg);
                     xSemaphoreGive(publish_image);
                 }
+                ret = mqtt_yield(&client, 100);
+                if (ret == MQTT_DISCONNECTED)
+                    break;
             }
 
             ret = mqtt_yield(&client, 100);
@@ -749,7 +875,7 @@ void user_init(void)
     /* By default take semaphore */
     xSemaphoreTake(capture_image, portMAX_DELAY);
     
-    xSemaphoreTake(publish_image, portMAX_DELAY);
+    //xSemaphoreTake(publish_image, portMAX_DELAY);
 
     publish_queue = xQueueCreate(1, sizeof(uint8_t *));
     
@@ -759,6 +885,6 @@ void user_init(void)
     xTaskCreate(&wifi_task, "wifi_task",  256, NULL, 2, NULL);
     //xTaskCreate(&beat_task, "beat_task", 256, NULL, 3, NULL);
     xTaskCreate(&mqtt_task, "mqtt_task", 512, NULL, 4, NULL);
-    xTaskCreate(&camera_task, "camera_task", 512, NULL, 5, NULL);
+    //xTaskCreate(&camera_task, "camera_task", 512, NULL, 5, NULL);
 
 }
